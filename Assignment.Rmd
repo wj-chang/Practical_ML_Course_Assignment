@@ -1,0 +1,123 @@
+---
+title: "Practical_ML_Course_Project"
+author: "WJC"
+date: "25/10/2020"
+output: html_document
+---
+
+## Instruction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+The goal of this project is to predict the manner in which they did the exercise. This is the `classe` variable in the training set.
+
+## Data description
+
+The outcome variable is `classe`, a factor variable with 5 levels. Participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in 5 different ways:
+
+Class A- exactly according to the specification 
+Class B- throwing the elbows to the front 
+Class C- lifting the dumbbell only halfway
+Class D- lowering the dumbbell only halfway
+Class E- throwing the hips to the front
+
+## Data Preprocessing  
+```{r}
+library(caret)
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+```
+### Download the Data
+```{r}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile=trainFile, method="curl")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile=testFile, method="curl")
+}
+```  
+### Read the Data
+```{r}
+train.raw <- read.csv("./data/pml-training.csv")
+test.raw <- read.csv("./data/pml-testing.csv")
+dim(train.raw)
+dim(test.raw)
+```
+There are 19622 observations and 160 variables in the training data set; 20 observations and 160 variables in the testing data set. The "classe" variable in the training set is the outcome to predict. 
+
+### Clean the data
+Clean the data and remove observations with missing values and irrelevant variables.
+```{r}
+sum(complete.cases(train.raw))
+
+test.raw <- test.raw[, colSums(is.na(test.raw)) == 0]
+train.raw <- train.raw[, colSums(is.na(train.raw)) == 0] 
+ 
+
+classe <- train.raw$classe
+train.remove <- grepl("^X|timestamp|window", names(train.raw))
+train.raw <- train.raw[, !train.remove]
+train.cleaned <- train.raw[, sapply(train.raw, is.numeric)]
+train.cleaned$classe <- classe
+test.remove <- grepl("^X|timestamp|window", names(test.raw))
+test.raw <- test.raw[, !test.remove]
+test.cleaned <- test.raw[, sapply(test.raw, is.numeric)]
+```
+The cleaned training data set now has 19622 observations and 53 variables and the testing data set has 20 observations and 53 variables.
+
+### Slice the data
+Split the cleaned training data set into the training data set (70%) and the validation data set (30%).   
+```{r}
+set.seed(251020) 
+Train <- createDataPartition(train.cleaned$classe, p=0.70, list=F)
+train.data <- train.cleaned[Train, ]
+test.data <- train.cleaned[-Train, ]
+```
+
+## Data Modeling
+Fit a prediction model for activity recognition using Random Forest algorithm (5-fold cross-validation) when applying the algorithm  
+```{r}
+controlrf <- trainControl(method="cv", 5)
+modelrf <- train(classe ~ ., data=train.data, method="rf", trControl=controlrf, ntree=300)
+modelrf
+```
+Estimate the model performance on the validation data set.  
+```{r}
+predictrf <- predict(modelrf, test.data)
+confusionMatrix(as.factor(test.data$classe), predictrf)
+
+accuracy <- postResample(predictrf, as.factor(test.data$classe))
+accuracy
+
+se <- 1 - as.numeric(confusionMatrix(as.factor(test.data$classe), predictrf)$overall[1])
+se
+```
+The estimated model accuracy is 99.2% and the estimated out-of-sample error is 0.8%.
+
+## Predicting for Test Data Set
+Apply the prediction model to the testing data set (the `problem_id` column was removed) and show the final result.  
+```{r}
+performance <- predict(modelrf, test.cleaned[, -length(names(test.cleaned))])
+performance
+```  
+
+## Appendix: Figures
+1. Correlation Matrix Visualisation  
+```{r}
+corr.plot <- cor(train.data[, -length(names(train.data))])
+corrplot(corr.plot, method="color")
+```
+2. Decision Tree Visualisation
+```{r}
+tree.model <- rpart(classe ~ ., data=train.data, method="class")
+prp(tree.model) 
+
